@@ -1,28 +1,35 @@
 {
     "name": "typescript-mcp-server-base",
-    "version": "1.0.0",
-    "main": "index.js",
+    "version": "2.0.0",
+    "private": true,
     "type": "module",
-    "bin": {
-        "mcp-server": "./build/index.js"
-    },
+    "description": "Streamable HTTP MCP 서버 보일러플레이트 (Next.js + mcp-handler, Vercel 배포용)",
     "scripts": {
-        "build": "tsc"
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "typecheck": "tsc --noEmit",
+        "inspect": "npx @modelcontextprotocol/inspector"
     },
-    "files": [
-        "build"
-    ],
+    "engines": {
+        "node": ">=20"
+    },
     "keywords": [],
     "author": "",
     "license": "ISC",
-    "description": "",
     "dependencies": {
         "@huggingface/inference": "^4.13.28",
-        "@modelcontextprotocol/sdk": "^1.25.3",
+        "@modelcontextprotocol/server": "^2.0.0",
+        "mcp-handler": "^2.0.1",
+        "next": "^16.2.12",
+        "react": "^19.2.8",
+        "react-dom": "^19.2.8",
         "zod": "^4.3.6"
     },
     "devDependencies": {
         "@types/node": "^24.10.9",
+        "@types/react": "^19.2.17",
+        "@types/react-dom": "^19.2.3",
         "typescript": "^5.9.3"
     }
 }

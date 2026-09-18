@@ -1,4 +1,5 @@
 import { InferenceClient } from '@huggingface/inference'
+import { HF_TOKEN_HEADER } from '@/mcp/lib/hf-token'
 
 const MODEL = 'black-forest-labs/FLUX.1-schnell'
 const PROVIDER = 'fal-ai'
@@ -9,14 +10,13 @@ export type GenerateImageResult =
 
 export async function generateImage(
     prompt: string,
-    numInferenceSteps: number
+    numInferenceSteps: number,
+    token?: string
 ): Promise<GenerateImageResult> {
-    const token = process.env.HF_TOKEN
-
     if (!token) {
         return {
             ok: false,
-            error: 'HF_TOKEN 환경변수가 설정되어 있지 않습니다. Hugging Face 토큰을 설정해 주세요.'
+            error: `Hugging Face 토큰이 없습니다. MCP 클라이언트 설정의 headers에 ${HF_TOKEN_HEADER} 헤더를 추가하거나, 서버에 HF_TOKEN 환경변수를 설정하세요.`
         }
     }
 

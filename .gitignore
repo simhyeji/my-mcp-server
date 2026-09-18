@@ -143,3 +143,7 @@ vite.config.ts.timestamp-*
 build/
 
 .cursor/mcp.json
+
+# Next.js generated agent files
+AGENTS.md
+CLAUDE.md

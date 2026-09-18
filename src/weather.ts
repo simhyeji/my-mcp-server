@@ -1,5 +1,5 @@
-import type { CountryTimezone } from './country-timezones.js'
-import { formatCurrentTime } from './country-timezones.js'
+import type { CountryTimezone } from './country-timezones'
+import { formatCurrentTime } from './country-timezones'
 
 export interface WeatherLocation {
     latitude: number

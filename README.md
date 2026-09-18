@@ -1,360 +1,161 @@
-# TypeScript MCP Server 보일러플레이트
+# TypeScript MCP Server 보일러플레이트 (Streamable HTTP / Vercel)
 
-TypeScript MCP SDK를 활용하여 Model Context Protocol (MCP) 서버를 빠르게 개발할 수 있는 보일러플레이트 프로젝트입니다.
+Next.js App Router + [`mcp-handler`](https://github.com/vercel/mcp-handler)로 Model Context Protocol(MCP) 서버를 Streamable HTTP 엔드포인트로 제공하는 보일러플레이트입니다. 그대로 Vercel에 배포할 수 있습니다.
 
-## 📁 프로젝트 구조
+- 엔드포인트: `POST /api/mcp`
+- 프로토콜: Streamable HTTP (stateless). 2026-07-28 스펙 네이티브 + 2025년대 클라이언트 폴백을 한 핸들러가 모두 처리합니다.
+- 제공 기능: 도구 6개(`greet`, `calculator`, `global_time`, `geocode`, `get_weather`, `generate-image`), 리소스 `server-info`, 프롬프트 `code_review`
+
+## 프로젝트 구조
 
 ```
-typescript-mcp-server-boilerplate/
-├── src/
-│   └── index.ts          # MCP 서버 메인 진입점
-├── build/                # 컴파일된 JavaScript 파일 (빌드 후 생성)
-├── package.json          # 프로젝트 의존성 및 스크립트
-├── tsconfig.json         # TypeScript 설정
-└── README.md            # 프로젝트 문서
+src/
+  app/
+    layout.tsx, page.tsx        # 엔드포인트/도구 목록 안내 페이지
+    api/mcp/route.ts            # MCP 핸들러 마운트
+  mcp/
+    config.ts                   # 서버 이름·버전·기능 목록
+    register.ts                 # registerAll(server): 도구·리소스·프롬프트 등록
+    lib/hf-token.ts             # x-hf-token 헤더 해석
+  generate-image.ts             # Hugging Face 이미지 생성
+  weather.ts, geocode.ts, country-timezones.ts
+next.config.ts
+tsconfig.json
 ```
 
-## 🚀 시작하기
+요청 1건마다 새 MCP 서버 인스턴스가 만들어지고 `registerAll`이 실행됩니다. 서버는 상태를 보관하지 않으므로 서버리스 환경에서 그대로 확장됩니다.
 
-### 1. 의존성 설치
+## 시작하기
 
 ```bash
 npm install
+npm run dev        # http://localhost:3000
 ```
 
-### 2. 서버 이름 설정
+MCP 엔드포인트: `http://localhost:3000/api/mcp`
 
-`src/index.ts` 파일에서 서버 이름을 수정하세요:
+### 환경 변수 (선택)
 
-```typescript
-const server = new McpServer({
-    name: 'typescript-mcp-server', // 여기를 원하는 서버 이름으로 변경
-    version: '1.0.0',
-    // 활성화 하고자 하는 기능 설정
-    capabilities: {
-        tools: {},
-        resources: {}
-    }
-})
-```
-
-> 💡 **팁**: 현재 보일러플레이트에는 이미 계산기와 인사 도구, 그리고 서버 정보 리소스가 예시로 구현되어 있습니다.
-
-### 3. 빌드
+로컬에서 서버 측 HF 토큰 fallback을 쓰려면 `.env` 파일을 만듭니다:
 
 ```bash
-npm run build
+cp .env.example .env
+# HF_TOKEN=hf_xxx
 ```
 
-### 4. 실행
+클라이언트가 `x-hf-token` 헤더를 보내면 **헤더 값이 우선**되고, 없을 때만 `HF_TOKEN` 환경변수를 사용합니다.
+
+### MCP Inspector로 테스트
 
 ```bash
-node build/index.js
+npm run inspect
 ```
 
-빌드가 성공하면 `build/` 디렉토리에 컴파일된 JavaScript 파일이 생성되고, 서버가 MCP 클라이언트의 연결을 대기합니다.
+1. 브라우저에서 `http://127.0.0.1:6274` 접속
+2. Transport를 **Streamable HTTP**로 선택
+3. URL에 `http://localhost:3000/api/mcp` 입력
+4. Configuration에서 커스텀 헤더(`x-hf-token`)를 추가한 뒤 **Connect**
 
-## 🛠️ 개발 가이드
+### curl로 빠르게 확인
 
-### MCP 도구(Tool) 추가하기
-
-MCP 서버에 새로운 도구를 추가하려면 `server.tool()` 메서드에 **Zod 스키마를 직접** 정의하여 등록합니다:
-
-```typescript
-import { z } from 'zod'
-
-// 계산기 도구 추가
-server.tool(
-    'calculator',
-    {
-        operation: z
-            .enum(['add', 'subtract', 'multiply', 'divide'])
-            .describe('수행할 연산 (add, subtract, multiply, divide)'),
-        a: z.number().describe('첫 번째 숫자'),
-        b: z.number().describe('두 번째 숫자')
-    },
-    async ({ operation, a, b }) => {
-        // 연산 수행
-        let result: number
-        switch (operation) {
-            case 'add':
-                result = a + b
-                break
-            case 'subtract':
-                result = a - b
-                break
-            case 'multiply':
-                result = a * b
-                break
-            case 'divide':
-                if (b === 0) throw new Error('0으로 나눌 수 없습니다')
-                result = a / b
-                break
-            default:
-                throw new Error('지원하지 않는 연산입니다')
-        }
-
-        const operationSymbols = {
-            add: '+',
-            subtract: '-',
-            multiply: '×',
-            divide: '÷'
-        } as const
-
-        const operationSymbol =
-            operationSymbols[operation as keyof typeof operationSymbols]
-
-        return {
-            content: [
-                {
-                    type: 'text',
-                    text: `${a} ${operationSymbol} ${b} = ${result}`
-                }
-            ]
-        }
-    }
-)
+```bash
+curl -X POST http://localhost:3000/api/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"calculator\",\"arguments\":{\"a\":7,\"b\":6,\"operator\":\"*\"}}}"
 ```
 
-#### 더 복잡한 도구 예시
+Stateless 서빙이므로 `GET`/`DELETE`(2025년대 세션 조작)는 `405`로 응답할 수 있습니다. 정상 동작입니다.
 
-```typescript
-// 날씨 정보 조회 도구
-server.tool(
-    'get_weather',
-    {
-        city: z.string().describe('날씨를 조회할 도시명'),
-        unit: z
-            .enum(['celsius', 'fahrenheit'])
-            .optional()
-            .default('celsius')
-            .describe('온도 단위 (기본값: celsius)')
-    },
-    async ({ city, unit }) => {
-        try {
-            // 실제 날씨 API 호출 로직 (예시)
-            const weatherData = await fetchWeatherData(city, unit)
+## Hugging Face 토큰: `x-hf-token` 헤더
 
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: `${city}의 현재 날씨:
-온도: ${weatherData.temperature}°${unit === 'celsius' ? 'C' : 'F'}
-날씨: ${weatherData.condition}
-습도: ${weatherData.humidity}%
-풍속: ${weatherData.windSpeed}km/h`
-                    }
-                ]
-            }
-        } catch (error) {
-            throw new Error(
-                `날씨 정보를 가져올 수 없습니다: ${(error as Error).message}`
-            )
-        }
-    }
-)
+`generate-image` 도구는 토큰을 다음 순서로 찾습니다.
 
-// 도우미 함수
-async function fetchWeatherData(city: string, unit: string) {
-    // 실제 날씨 API 호출 구현
-    // 여기서는 예시 데이터 반환
-    return {
-        temperature: unit === 'celsius' ? 22 : 72,
-        condition: '맑음',
-        humidity: 65,
-        windSpeed: 12
-    }
-}
-```
+1. 요청의 `x-hf-token` 헤더 — 클라이언트가 자기 토큰을 주입하는 기본 경로
+2. 서버의 `HF_TOKEN` 환경변수 — 폴백
 
-### 리소스 추가하기
+구현은 [`src/mcp/lib/hf-token.ts`](src/mcp/lib/hf-token.ts)의 `resolveHfToken()`이며, 도구 안에서는 `ctx.http?.req`로 원본 HTTP 요청에 접근합니다.
 
-MCP 서버에 리소스를 추가하여 외부 데이터나 파일에 대한 접근을 제공할 수 있습니다:
+토큰이 둘 다 없으면 도구가 `isError`와 함께 설정 안내 메시지를 반환합니다. 토큰 값은 로그나 응답에 포함하지 않습니다.
 
-```typescript
-// 리소스 등록
-server.resource(
-    'example-file',
-    'file://example.txt',
-    {
-        name: '예시 텍스트 파일',
-        description: '예시 텍스트 파일 설명',
-        mimeType: 'text/plain'
-    },
-    async () => {
-        return {
-            contents: [
-                {
-                    uri: 'file://example.txt',
-                    mimeType: 'text/plain',
-                    text: '예시 파일 내용입니다.'
-                }
-            ]
-        }
-    }
-)
+## MCP 클라이언트 연결
 
-// 동적 리소스 예시
-server.resource(
-    'app-settings',
-    'config://settings',
-    {
-        name: '애플리케이션 설정',
-        description: '애플리케이션의 현재 설정 정보',
-        mimeType: 'application/json'
-    },
-    async () => {
-        const settings = {
-            theme: 'dark',
-            language: 'ko-KR',
-            notifications: true,
-            lastUpdated: new Date().toISOString()
-        }
-
-        return {
-            contents: [
-                {
-                    uri: 'config://settings',
-                    mimeType: 'application/json',
-                    text: JSON.stringify(settings, null, 2)
-                }
-            ]
-        }
-    }
-)
-```
-
-## 📦 주요 의존성
-
-- **@modelcontextprotocol/sdk**: MCP 프로토콜 구현을 위한 공식 SDK
-- **zod**: TypeScript 우선 스키마 검증 라이브러리
-- **typescript**: TypeScript 컴파일러
-
-## 🔧 스크립트
-
-- `npm run build`: TypeScript를 JavaScript로 컴파일하고 실행 권한 설정
-
-## 📋 사용 예시
-
-### 완전한 서버 예시
-
-```typescript
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { z } from 'zod'
-
-// 서버 생성
-const server = new McpServer({
-    name: 'my-mcp-server',
-    version: '1.0.0',
-    capabilities: {
-        tools: {},
-        resources: {}
-    }
-})
-
-// 간단한 인사 도구
-server.tool(
-    'greet',
-    {
-        name: z.string().describe('인사할 사람의 이름'),
-        language: z
-            .enum(['ko', 'en'])
-            .optional()
-            .default('ko')
-            .describe('인사 언어 (기본값: ko)')
-    },
-    async ({ name, language }) => {
-        const greeting =
-            language === 'ko' ? `안녕하세요, ${name}님!` : `Hello, ${name}!`
-
-        return {
-            content: [
-                {
-                    type: 'text',
-                    text: greeting
-                }
-            ]
-        }
-    }
-)
-
-// 시스템 정보 리소스
-server.resource(
-    'system-info',
-    'system://info',
-    {
-        name: '시스템 정보',
-        description: '서버의 현재 상태 및 시스템 정보',
-        mimeType: 'application/json'
-    },
-    async () => {
-        const systemInfo = {
-            server: 'my-mcp-server',
-            version: '1.0.0',
-            timestamp: new Date().toISOString(),
-            uptime: process.uptime()
-        }
-
-        return {
-            contents: [
-                {
-                    uri: 'system://info',
-                    mimeType: 'application/json',
-                    text: JSON.stringify(systemInfo, null, 2)
-                }
-            ]
-        }
-    }
-)
-
-// 서버 시작
-async function main() {
-    const transport = new StdioServerTransport()
-    await server.connect(transport)
-    console.error('MCP 서버가 시작되었습니다')
-}
-
-main().catch(console.error)
-```
-
-## 🔧 Cursor MCP 연결
-
-개발한 MCP 서버를 Cursor에서 테스트할 수 있습니다:
-
-### 설정 파일 수정
-
-`./.cursor/mcp.json` 파일을 편집합니다:
+`npm run dev` 실행 후 [`.cursor/mcp.json`](./.cursor/mcp.json)을 참고하세요:
 
 ```json
 {
     "mcpServers": {
-        "typescript-mcp-server": {
-            "command": "node",
-            "args": ["/ABSOLUTE/PATH/TO/YOUR/PROJECT/build/index.js"]
+        "my-mcp-server": {
+            "url": "http://localhost:3000/api/mcp",
+            "headers": {
+                "x-hf-token": "YOUR_HUGGING_FACE_TOKEN_HERE"
+            }
         }
     }
 }
 ```
 
-> **주의**: 절대 경로를 사용해야 합니다. `pwd` 명령어로 현재 경로를 확인하세요.
+배포 후에는 URL만 `https://<your-project>.vercel.app/api/mcp`로 바꾸면 됩니다.
 
-### 테스트 명령어
+stdio만 지원하는 클라이언트는 [`mcp-remote`](https://www.npmjs.com/package/mcp-remote)로 연결합니다.
 
-Cursor MCP에서 다음과 같이 테스트해볼 수 있습니다:
+```json
+{
+    "mcpServers": {
+        "my-mcp-server": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "http://localhost:3000/api/mcp",
+                "--header",
+                "x-hf-token:YOUR_HUGGING_FACE_TOKEN_HERE"
+            ]
+        }
+    }
+}
+```
 
-- "5 더하기 3은 얼마야?" (계산기 도구 테스트)
-- "안녕하세요 라고 인사해줘" (인사 도구 테스트)
-- 서버 정보 리소스 조회
+## Vercel 배포
 
-## 🔗 참고 자료
+1. GitHub 저장소를 Vercel 프로젝트에 연결하면 `main` 푸시마다 자동 배포됩니다.
+2. 빌드 설정은 기본값(`next build`) 그대로 사용합니다.
+3. 환경변수 `HF_TOKEN`은 서버 측 폴백이 필요할 때만 등록합니다. 클라이언트가 항상 `x-hf-token`을 보낸다면 등록하지 않아도 됩니다.
+4. [`src/app/api/mcp/route.ts`](src/app/api/mcp/route.ts)에서 실행 환경을 지정합니다.
 
+```ts
+export const runtime = 'nodejs'
+export const maxDuration = 60 // 이미지 생성 여유
+```
+
+배포된 엔드포인트는 인증 없이 공개됩니다. 접근 제어가 필요하면 `mcp-handler`의 `withMcpAuth` + `/.well-known/oauth-protected-resource` 라우트로 OAuth를 추가하세요.
+
+## 도구 추가하기
+
+[`src/mcp/register.ts`](src/mcp/register.ts)의 `registerAll` 함수 안에 `server.registerTool(...)`을 추가합니다.
+
+- `inputSchema`/`outputSchema`/`argsSchema`는 원시 shape가 아니라 완전한 스키마(`z.object({ ... })`)를 넘깁니다. MCP SDK v2 규칙입니다.
+- 실패는 예외 대신 `isError: true`와 사용자용 메시지로 반환하는 편이 클라이언트 경험이 좋습니다.
+- `config.ts`의 `TOOL_NAMES`에도 이름을 추가하면 `server-info` 리소스와 안내 페이지에 함께 반영됩니다.
+
+## 스크립트
+
+| 명령 | 설명 |
+| ------------------- | --------------------------------- |
+| `npm run dev` | 개발 서버 (http://localhost:3000) |
+| `npm run build` | 프로덕션 빌드 |
+| `npm start` | 빌드 결과 실행 |
+| `npm run typecheck` | 타입 검사 |
+| `npm run inspect` | MCP Inspector 실행 |
+
+## 참고 자료
+
+- [Deploy MCP servers to Vercel](https://vercel.com/docs/mcp/deploy-mcp-servers-to-vercel)
+- [vercel/mcp-handler](https://github.com/vercel/mcp-handler)
 - [Model Context Protocol 공식 문서](https://modelcontextprotocol.io/)
 - [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)
-- [Node.js MCP 서버 개발 가이드](https://modelcontextprotocol.io/docs/develop/build-server#node)
 - [Zod 문서](https://zod.dev/)
 
-## 📄 라이선스
+## 라이선스
 
 MIT
